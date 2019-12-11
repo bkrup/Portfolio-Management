@@ -1,0 +1,257 @@
+---
+title: "Midterm Project"
+author: "Brendon Krupa"
+date: "12/3/2019"
+output: word_document
+---
+
+## Question 1
+
+```{r, results='hide'}
+setwd("/Users/Brendon/Documents/FE 630/data")
+
+# initialize vector of symbols for reading in the files
+syms <- c("AA", "AXP", "BA", "BAC", "CAT", "CSCO", "CVX", "DD", "DIS", "GE", "HD", "HPQ", "IBM", "INTC", "JNJ", "JPM", "KO", "MCD", "MMM", "MRK", "MSFT", "PFE", "PG", "T", "TRV", "UNH", "UTX", "VZ", "WMT", "XOM")
+processdata <- function(s){
+  for (sym in s) {
+  # add .txt to each symbol and save file as a matrix
+  temp <- sprintf("%s.txt", sym)
+  temp2 <- scan(temp)
+  temp2 <- matrix(temp2, ncol = 7, byrow = TRUE)
+  
+  # merge the date and adjusted close columns for the first file and just the adjusted close for the rest
+  if (sym == syms[1]){
+    m <- cbind(temp2[,1], temp2[,7])
+    }
+  else{
+    m <- cbind(m, temp2[,7])
+    } 
+  }
+
+  # constructing returns matrix, first initial 30 column matrix
+  P <- matrix(ncol = 30)
+  
+  # calculate and bind in returns by row
+  for (i in 2:689) {
+    temp <- ((m[i,2:31] - m[i-1,2:31])/m[i-1,2:31])
+    P <- rbind(P, temp)
+  }
+  
+  # manipulating P to make the dates the index rather than a column
+  P <- cbind(m[,1], P)
+  rownames(P) <- P[,1]
+  P <- P[2:689, 2:31]
+  
+  # calculating mean returns and covariance matrix from returns matrix
+  mu <- colMeans(P)
+  Q <- cov(P)
+  rownames(Q) <- syms
+  colnames(Q) <- syms
+  
+  # save output file as inputs.RData in the same folder as the data
+  save(mu, Q, file = "inputs.RData")
+}
+processdata(syms)
+```
+
+
+
+## Question 2
+
+```{r}
+library("Rsolnp")
+# load in mu and Q from question 1
+load("/Users/Brendon/Documents/FE 630/data/inputs.RData")
+
+# intitialize e as vector of 1s for each security
+e <- mu/mu
+port <- function(tau, q, mu){
+  # function to optimize
+  f <- function(h){
+    .5 * t(h) %*% q %*% h - tau * t(h) %*% mu
+  }
+
+  # equality constraint function
+  eq <- function(h){
+    z1 = t(h) %*% e
+    return(z1)
+  }
+
+  # inequality constraint function
+  ineq <- function(h){
+    z1 = h
+    return(z1)
+  }
+
+  s <- solnp(c(1, e[2:30]*0), fun = f, ineqfun = ineq, ineqUB = e*.1, ineqLB = e*0, eqfun = eq, eqB = 1)
+  # return optimal weights
+  return(s$pars)
+}
+```
+
+
+
+## Question 3
+
+```{r, include=TRUE, results='hide'}
+# initialize sequence of tau values
+TAU <- seq(0, 0.5, by = .001)
+frontier <- function(t, q){
+  maxSharp <- 0
+  rets <- c()
+  sigs <- c()
+  for (i in 1:length(t)) {
+    # find weights for each tau
+    temp <- port(t[i], q, mu)
+    
+    # calculate variance and return
+    sig <- t(temp) %*% q %*% temp
+    ret <- t(mu) %*% temp
+    
+    # save optimal portfolio with max sharpe ratio
+    if (ret/sig > maxSharp){
+      maxSharp <- ret/sig
+      maxRet <- ret
+      minSig <- sqrt(sig)
+      opt <- temp
+    }
+    rets <- c(rets, ret)
+    sigs <- c(sigs, sig)
+  }
+  
+  # Plot Efficient Frontier and optimal portfolio
+  plot(sqrt(sigs)*10, rets*100, main = "Efficient Frontier", xlab = "Sigma (%)", ylab = "Mu (%)")
+  points(minSig*10, maxRet*100, col = "green")
+  text(minSig*10, maxRet*100 - .005, col = "green", labels = c('Opt Port'))
+  
+  # returns weights of optimal portfolio
+  return(opt)
+}
+frontier(TAU, Q)
+```
+
+
+
+## Question 4
+
+```{r}
+# read in data
+setwd("/Users/Brendon/Documents/FE 630/Midtermdata")
+dow <- read.table(file = "data.tsv")
+dow <- as.matrix(dow) # save as matrix
+
+# calculating returns
+dow_rets <- matrix(ncol = 31)
+for (i in 2:250) {
+  temp <- ((dow[i,1:31] - dow[i - 1, 1:31])/dow[i - 1, 1:31])*252
+  dow_rets <- rbind(dow_rets, temp)
+}
+
+# saving index and resetting index
+ind <- rownames(dow)
+dow_rets <- dow_rets[2:250,1:31]
+row.names(dow_rets) <- NULL
+
+# covariance matrix
+Qts <- cov(dow_rets)
+Qts[2:6, 2:6]
+```
+
+
+
+## Question 5
+
+```{r}
+# initialize vectors to store intercepts, slopes, and idiosyncratic standard deviations
+ints <- c()
+slopes <- c()
+isds <- c()
+
+# convert returns matrix to dataframe so it's easier to work with
+df <- as.data.frame(dow_rets)
+
+# loop through column names and run regressions
+for (sym in colnames(df)[2:31]) {
+  r <- lm(sprintf("%s~X.DJI", sym), data = df)
+  ints <- c(ints, r$coefficients[1])
+  slopes <- c(slopes, r$coefficients[2])
+  isds <- c(isds, sd(r$residuals))
+}
+
+# create summary table
+results <- data.frame(matrix(ncol = 30))
+colnames(results) <- colnames(df)[2:31]
+results <- rbind(results, ints)
+results <- rbind(results, slopes)
+results <- rbind(results, isds)
+results <- results[2:4,]
+row.names(results) <- c("Intercept", "Slope", "ISD")
+
+results
+```
+
+
+```{r}
+# Variance of index's returns (%)
+Dvar <- var(df$X.DJI)
+Dvar
+```
+
+# Estimating the Covariance Matrix
+
+```{r}
+# build diagonal matrix of idiosyncratic standard deviations
+mat2 <- diag(results[3,])
+mat2 <- mat2^2 # use square of idisyncratic risk
+
+# build matrix of Betas of the index where the diagonal is the square of each company's beta
+mat1 <- slopes %*% t(slopes)
+
+Qsi <- Dvar * mat1 + mat2
+colnames(Qsi) <- colnames(results)
+rownames(Qsi) <- colnames(results)
+Qsi[1:5,1:5]
+```
+
+
+
+## Question 6
+
+```{r, results='hide'}
+# initialize sequence of tau values and recalculate returns vector
+TAU <- seq(0, 5, by = .05)
+mu2 <- colMeans(dow_rets[,2:31])
+rets1 <- c()
+sigs1 <- c()
+for (i in 1:length(TAU)) {
+  # find weights for each tau
+  temp <- port(TAU[i], Qts[2:31, 2:31], mu2)
+  
+  # calculate standard deviation and return
+  sig <- sqrt(t(temp) %*% Qts[2:31,2:31] %*% temp)
+  sigs1 <- c(sigs1, sig)
+  ret <- t(mu2) %*% temp
+  rets1 <- c(rets1, ret)
+}
+
+rets2 <- c()
+sigs2 <- c()
+for (i in 1:length(TAU)) {
+  # find weights for each tau
+  temp <- port(TAU[i], Qsi, mu2)
+  
+  # calculate standard deviation and return
+  sig <- sqrt(t(temp) %*% Qsi %*% temp)/sqrt(252)
+  sigs2 <- c(sigs2, sig)
+  ret <- t(mu2) %*% temp
+  rets2 <- c(rets2, ret)
+}
+```
+
+```{r}
+plot(sigs1/sqrt(252), rets1, col = 'blue', main = "Efficient Frontier", xlab = "Sigma (%)", ylab = "Mu (%)", xlim = c(.13,.138))
+lines(sigs2, rets2, col = 'red', type = 'p')
+legend(.13, .2, legend = c('Q_ts', 'Q_si'), col = c('blue', 'red'), lty=1:2, cex=0.8)
+```
+
+The efficient frontiers seem very similar, suggesting that the single index approximation for the covariance matrix is a valid estimation. The two frontiers converge to similar points and only differ by no more than one basis point in standard deviation.

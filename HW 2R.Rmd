@@ -1,0 +1,169 @@
+---
+title: "HW 2"
+author: "Brendon Krupa"
+date: "11/3/2019"
+output:
+  word_document: default
+  pdf_document: default
+---
+## Eigenvalues and Eigenvectors
+
+```{r}
+library("quadprog")
+Amat <- matrix(c(1, 2, 1, 2, 1, 1, 1, 1, 2), ncol = 3, byrow = TRUE)
+Amat
+
+# Eigenvalues and Eigenvectors of A
+eig = eigen(Amat)
+eig
+```
+
+```{r}
+# Finding P and D
+P <- eig$vectors
+P
+Pinv <- solve(P)
+D <- diag(c(4, 1, -1))
+D
+P %*% D %*% Pinv
+```
+
+```{r}
+# Inverse of A
+Ainv <- solve(Amat)
+Ainv
+Dinv <- solve(D)
+P %*% Dinv %*% Pinv 
+```
+
+## Non Constrained Optimization and Convexity
+
+```{r}
+library("Rsolnp")
+opt_func <- function(x) {
+  x[1]^2 + (x[1] + x[2])^2 +(x[1] + x[3]^2)
+}
+solnp(c(0,0,0), fun = opt_func)
+
+```
+
+This validates my initial finding of the extreme point with x1 = x2 = x3 = 0
+
+## Optimization with Equality Constraints
+
+```{r}
+# 1
+opt_func <- function(x) {
+  x[1] + x[2] + 2*x[3]^2
+}
+equal1 <- function(x) {
+  z1 = x[1] + 0*x[2] + 0*x[3]
+  z2 = x[1]^2 + x[2]^2 + 0*x[3]
+  return(c(z1, z2))
+}
+
+solnp(c(1, 0, 1), fun = opt_func, eqfun = equal1, eqB = c(1, 1))
+```
+
+Poor results and as I found in the written section, a Lagrangian approach is not feasible. Additionally the redundant constraints is consistent with the linear dependency I found between the gradients of the constrain functions.
+
+```{r}
+# 2
+opt_func <- function(x) {
+  2*x[1]^2 + x[2]^2
+}
+equal1 <- function(x) {
+  z1 = x[1] + x[2]
+  return(z1)
+}
+
+solnp(c(.5, .5), fun = opt_func, eqfun = equal1, eqB = 1)
+```
+
+Thus x1 = 1/3, x2 = 2/3, and the Lagrangian is 4/3, which are all consistent with the written work.
+
+```{r}
+# Change constraint to 1.05
+s = solnp(c(.5, .5), fun = opt_func, eqfun = equal1, eqB = 1.05)
+s
+# Optimal Value when constraint is 1
+opt_func(c(1/3, 2/3))
+
+# Optimal Value when constraint is 1.05
+opt_func(s$pars)
+
+#Difference
+opt_func(s$pars) - opt_func(c(1/3, 2/3))
+```
+
+Therefore my approximation was effective at 1/15 or 0.06667 compared to the actual value of 0.0683
+
+```{r}
+# 3
+p1 = .05
+p2 = .1
+sig1 = .1
+sig2 = .2
+corr = -.5
+
+f <- function(x) {
+  -p1*x[1] - p2*x[2]
+}
+
+eq1 <- function(x) {
+  z1 = sqrt((sig1^2)*x[1]^2 + (sig2)*x[2]^2 + 2*corr*x[1]*x[2]*sig1*sig2)
+  z2 = x[1] + x[2]
+  return(c(z1))
+}
+#sigT 2% - 30% by 0.5%
+sigT = .02
+s <- solnp(c(1, 0), fun = f, eqfun = eq1, eqB = sigT)
+df <- data.frame(w1 = c(s$pars[1]), w2 = c(s$pars[2]), sigT = c(sigT), mu = c(-100*f(s$pars)), sigma = c(100*eq1(s$pars)))
+while (sigT <= .30){
+  s <- solnp(c(1, 0), fun = f, eqfun = eq1, eqB = sigT)
+  df = rbind(df, data.frame(w1 = c(s$pars[1]), w2 = c(s$pars[2]), sigT = c(sigT), mu = c(-100*f(s$pars)), sigma = c(100*eq1(s$pars))))
+  sigT = sigT + .005
+}
+plot(df$sigma, df$mu, type = "p", xlab = "Risk", ylab = "Return", main = "Efficient Frontier", col = "green")
+lines(100*sig1, 100*p1, type = "p", col = "blue")
+lines(100*sig2, 100*p2, type = "p", col = "red")
+lines(100*eq1(c(.5,.5)), -100*f(c(.5,.5)), type = "p", col = "black")
+legend(3, 15, legend = c("Efficient Frontier", "Stock 1", "Stock 2", "Equal Weight"), col = c("green", "blue", "red", "black"), lty=1:2, cex=0.8)
+```
+
+Therefore this efficient frontier with the portfolio risk constraint builds portfolios that outperform each security individually and greatly outperforms an equally weighted portfolio.
+
+## Optimization with Inequality Constraints
+
+```{r}
+# 1
+f <- function(x) {
+  (x[1] - 2)^2 + 2*(x[2] - 1)^2
+}
+ineq1 <- function(x) {
+  z1 = x[1] + 4*x[2]
+  z2 = x[2] - x[1]
+  return(c(z1, z2))
+}
+
+solnp(c(1, 0), fun = f, ineqfun = ineq1, ineqUB = c(3,0), ineqLB = c(-50, -50))
+```
+
+This verifies my work from the written section with x1 equal to 5/3 and x2 at 1/3, as well as the constraint constant at -2/3.
+
+```{r}
+# 2
+f <- function(x) {
+  -5 + x[1]^2 + x[1]*x[2] + 3*x[2]^2
+}
+ineq1 <- function(x) {
+  z1 = x[1]*x[2]
+  z2 = x[2]
+  z3 = x[1]
+  return(c(z1, z2, z3))
+}
+
+solnp(c(1, 0), fun = f, ineqfun = ineq1, ineqUB = c(1000, 1000, 1000), ineqLB = c(2, 0, 0))
+```
+
+This verifies the optimal values for x I found of x1 = 2/(4/3)^.25 and x2 = (4/3)^.25, and the value of mu1 for the constraint function x1*x2 >= 2 which I found to be 4.64.

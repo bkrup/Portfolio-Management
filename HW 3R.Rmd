@@ -1,0 +1,256 @@
+---
+title: "HW 3R"
+author: "Brendon Krupa"
+date: "11/28/2019"
+output: word_document
+---
+
+## The Data
+
+```{r}
+sig <- matrix(c(.1, .02, .01, .02, .11, .03, .01, .03, .2), ncol = 3, byrow = TRUE)*100
+sig
+inv_sig <- solve(sig)
+
+p <- matrix(c(.045, .003, .0285))*100
+
+e <- matrix(c(1, 1, 1))
+e
+
+A = as.numeric(t(p) %*% inv_sig %*% e)
+A
+
+B = as.numeric(t(p) %*% inv_sig %*% (p))
+B
+
+C = as.numeric(t(e) %*% inv_sig %*% e)
+C
+
+detM = as.numeric(B*C - A^2)
+detM
+
+g = (1/detM) * ((B * (inv_sig %*% e)) - A * (inv_sig %*% p))
+g
+
+h = ((1/detM) * (C * (inv_sig %*% p) - A * (inv_sig %*% e)))
+h
+```
+
+## Markowitz Mean-Variance with Risky Securities
+
+# Global Minimal Variance Portfolio
+```{r}
+Pstar_var = as.numeric(1/C)
+Pstar_var
+
+Pstar_ret = as.numeric(A/C)
+Pstar_ret
+
+
+wPstar = g + (h * Pstar_ret)
+wPstar
+```
+
+Global Min Variance Portfolio with Optimizer
+
+```{r}
+library("quadprog")
+b <- c(1, Pstar_ret)
+Amat <- matrix(c(e, p), 3, 2)
+
+sol <- solve.QP(sig, c(0,0,0), Amat, b, meq = 2)
+sol$solution
+```
+
+# Portfolio 1
+Target Return of p1/3
+
+```{r}
+P1 = p[1]/3
+P1
+
+wP1 = g + (h * P1)
+wP1/sum(wP1)
+```
+
+Portfolio 1 with Optimizer
+
+```{r}
+b1 <- c(1, P1)
+
+sol1 <- solve.QP(sig, c(0,0,0), Amat, b1, meq = 2)
+wP1 <- sol1$solution
+wP1
+```
+
+# Portfolio 2
+Target Return of p2 + p3
+
+```{r}
+P2 = p[2] + p[3]
+P2
+
+wP2 = g + (h * P2)
+wP2/sum(wP2)
+```
+
+Portfolio 2 with Optimizer
+
+```{r}
+b2 <- c(1, P2)
+
+sol2 <- solve.QP(sig, c(0,0,0), Amat, b2, meq = 2)
+wP2 <- sol2$solution
+wP2
+```
+
+# Portfolio 3
+
+```{r}
+P3 <- (p[1] + p[2] + p[3])/3 
+alpha <- (P3 - P2)/(P1 - P2)
+alpha
+
+wP3 <- (alpha * wP1) + (1 - alpha)*wP2
+wP3
+```
+
+Portfolio 3 with Optimizer
+
+```{r}
+b3 <- c(1, P3)
+
+sol3 <- solve.QP(sig, c(0,0,0), Amat, b3, meq = 2)
+wP3 <- sol3$solution
+wP3
+```
+
+# Mean-Variance Efficient Frontier
+
+```{r}
+plot(sqrt(t(wPstar) %*% sig %*% wPstar), t(p) %*% wPstar, xlab = 'Sigma (%)', ylab = 'Return (%)', main = 'Efficient Frontier', col = 'green', type = 'p', xlim = c(.2, 5), ylim = c(.4, 10))
+lines(sqrt(t(wP1) %*% sig %*% wP1), t(p) %*% wP1, type = 'p', col = 'gray43')
+lines(sqrt(t(wP2) %*% sig %*% wP2), t(p) %*% wP2, type = 'p', col = 'maroon1')
+lines(sqrt(t(wP3) %*% sig %*% wP3), t(p) %*% wP3, type = 'p', col = 'darkorange3')
+
+points(sqrt(diag(sig)), p, col = 'lightskyblue')
+text(sqrt(diag(sig)), c(p[1] - .4, p[2] + .4,  p[3] + .4), col = 'lightskyblue', labels = c('S1', 'S2', 'S3'))
+rets <- c()
+sigs <- c()
+for(t in seq(0, 10, length.out = 1000)){
+  alpha <- (t - P2)/(P1 - P2)
+  wP <- (alpha * wP1) + (1 - alpha)*wP2
+  sigma <- sqrt(t(wP) %*% sig %*% wP)
+  rets <- c(rets, t)
+  sigs <- c(sigs, sigma)
+}
+lines(sigs, rets, type = 'l', col = 'navyblue')
+abline(b = sqrt(detM/C), a = A/C, col = 'salmon')
+abline(b = -sqrt(detM/C), a = A/C, col = 'salmon')
+legend(.5, 10, legend = c("Min Variance", "Portfolio 1", "Portfolio 2", "Portfolio 3", "Efficient Frontier", "Asymptotes"), col = c("green", "gray43", "maroon1", "darkorange3", "navyblue", "salmon"), lty=1:2, cex=0.8)
+```
+
+
+## Markowitz Mean-Variance with Risky and Risk-Free Securities
+
+```{r}
+P0 <- 0.6
+PT <- A/C - (detM/(C^2))/(P0-A/C)
+pxs <- p - P0
+H <- t(pxs) %*% inv_sig %*% pxs
+sigT <- -sqrt(H)/(C * (P0 - A/C))
+
+PT
+sigT
+```
+
+Tangent Portfolio Weights
+
+```{r}
+pxs <- p - P0*e
+wT <- (1/(A - C*P0))*(inv_sig %*% pxs)
+wT
+
+t(p) %*% wT
+sqrt(t(wT) %*% sig %*% wT)
+```
+
+# Efficient Frontier
+
+```{r}
+plot(sigs, rets, type = 'l', col = 'navyblue', xlab = 'Sigma (%)', ylab = 'Return (%)', main = 'Efficient Frontier', xlim = c(.2, 5), ylim = c(.4, 10))
+
+points(c(sqrt(t(wP1) %*% sig %*% wP1), sqrt(t(wP2) %*% sig %*% wP2), sqrt(t(wP3) %*% sig %*% wP3), sigT), c(t(p) %*% wP1, t(p) %*% wP2, t(p) %*% wP3, PT), col = 'green')
+text(c(sqrt(t(wP1) %*% sig %*% wP1) +.2, sqrt(t(wP2) %*% sig %*% wP2) + .2, sqrt(t(wP3) %*% sig %*% wP3), sigT), c(t(p) %*% wP1, t(p) %*% wP2, t(p) %*% wP3 - .5, PT - .4), col = 'green', labels = c('P1', 'P2', 'P3', 'PT'))
+
+points(sqrt(t(wPstar) %*% sig %*% wPstar), t(p) %*% wPstar, col = 'darkgoldenrod3')
+text(sqrt(t(wPstar) %*% sig %*% wPstar) - .3, t(p) %*% wPstar, col = 'darkgoldenrod3', labels = c('Min Var'))
+abline(b = sqrt(detM/C), a = A/C, col = 'salmon')
+abline(b = -sqrt(detM/C), a = A/C, col = 'salmon')
+points(sqrt(diag(sig)), p, col = 'lightskyblue')
+text(sqrt(diag(sig)), c(p[1] - .4, p[2] + .4,  p[3] + .4), col = 'lightskyblue', labels = c('S1', 'S2', 'S3'))
+
+abline(b = sqrt(H), a = P0, col = 'mediumpurple1')
+abline(b = -sqrt(H), a = P0, col = 'mediumpurple1')
+legend(1, 10, legend = c("Efficient Frontier", "Asymptotes", "Risk-Free EF"), col = c("navyblue", "salmon", "mediumpurple1"), lty=1:2, cex=0.8)
+```
+
+The efficient frontiers intersect at a single point, the tangent portfolio. This tangent portfolio represents the market portfolio that mimics the behavior of the market while only being invested in four securities. This second efficient frontier is the capital market line and therefore must intersect the risky efficient frontier at a single point that represents the market portfolio.
+
+# Finding P4
+
+```{r}
+P4 <- 5
+alpha4 <- (P4 - PT)/(P0 - PT)
+sig4 <- (1 - alpha4)*sigT
+alpha4
+sig4
+```
+
+Finding Weights
+
+```{r}
+w4 <- c(alpha4, (1-alpha4)*wT)
+t(c(P0,p)) %*% w4
+w4
+```
+
+
+# Finding P5
+
+```{r}
+sig5 <- sqrt(16)
+alpha5 <- as.numeric(1 - sig5/sigT)
+P5 <- alpha5*P0 + (1 - alpha5)*PT
+alpha5
+P5
+```
+
+Finding Weights
+
+```{r}
+w5 <- c(alpha5, (1-alpha5)*wT)
+t(c(P0,p)) %*% w5
+w5
+```
+
+# Adding to Graph 
+
+```{r}
+plot(sigs, rets, type = 'l', col = 'navyblue', xlab = 'Sigma (%)', ylab = 'Return (%)', main = 'Efficient Frontier', xlim = c(.2, 5), ylim = c(.4, 10))
+
+points(c(sqrt(t(wP1) %*% sig %*% wP1), sqrt(t(wP2) %*% sig %*% wP2), sqrt(t(wP3) %*% sig %*% wP3), sigT, sig4, sig5), c(t(p) %*% wP1, t(p) %*% wP2, t(p) %*% wP3, PT, P4, P5), col = 'green')
+text(c(sqrt(t(wP1) %*% sig %*% wP1) +.2, sqrt(t(wP2) %*% sig %*% wP2) + .2, sqrt(t(wP3) %*% sig %*% wP3), sigT, sig4, sig5), c(t(p) %*% wP1, t(p) %*% wP2, t(p) %*% wP3 - .5, PT - .4, P4 + .4, P5 + .4), col = 'green', labels = c('P1', 'P2', 'P3', 'PT', 'P4', 'P5'))
+
+points(sqrt(t(wPstar) %*% sig %*% wPstar), t(p) %*% wPstar, col = 'darkgoldenrod3')
+text(sqrt(t(wPstar) %*% sig %*% wPstar) - .3, t(p) %*% wPstar, col = 'darkgoldenrod3', labels = c('Min Var'))
+abline(b = sqrt(detM/C), a = A/C, col = 'salmon')
+abline(b = -sqrt(detM/C), a = A/C, col = 'salmon')
+points(sqrt(diag(sig)), p, col = 'lightskyblue')
+text(sqrt(diag(sig)), c(p[1] - .4, p[2] + .4,  p[3] + .4), col = 'lightskyblue', labels = c('S1', 'S2', 'S3'))
+
+abline(b = sqrt(H), a = P0, col = 'mediumpurple1')
+abline(b = -sqrt(H), a = P0, col = 'mediumpurple1')
+legend(1, 10, legend = c("Efficient Frontier", "Asymptotes", "Risk-Free EF"), col = c("navyblue", "salmon", "mediumpurple1"), lty=1:2, cex=0.8)
+```
+
